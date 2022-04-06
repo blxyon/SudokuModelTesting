@@ -1,3 +1,5 @@
 NPYViewer
-app/__pycache__
-appwithout/__pycache__
+__pycache__/
+test/modules/app/__pycache__/
+test/modules/appwithout/__pycache__/
+test/__pycache__/
