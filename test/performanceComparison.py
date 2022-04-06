@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import cProfile
 import io
+import os
 import pstats
 import time
 import pandas as pd
@@ -100,6 +101,8 @@ def prof_to_csv(prof: cProfile.Profile):
     return '\n'.join(lines)
 
 def cProfileR(sudoku):
+    if not os.path.exists('cProfileGeneratedData'):
+        os.makedirs('cProfileGeneratedData')
     pr = cProfile.Profile()
     pr.enable()
     sor.sudoku_solver(sudoku)

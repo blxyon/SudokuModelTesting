@@ -3,4 +3,4 @@ __pycache__/
 test/modules/app/__pycache__/
 test/modules/appwithout/__pycache__/
 test/__pycache__/
-test/cProfileGeneratedData/
+test/cProfileGeneratedData/**
