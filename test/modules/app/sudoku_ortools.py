@@ -21,7 +21,7 @@ def initialize_sudoku(model_or_tool, sudoku_init, sudoku_to_do):
     return sudoku_init
 
 
-def solveSudoku(sudoku):
+def sudoku_solver(sudoku):
     model = cp_model.CpModel()
     solution = numpy.full((9,9), 0, dtype=float)
     sudoku2 = [[model.NewIntVar(1, 9, 'column: %i' % i) for i in range(9)] for j in range(9)]
