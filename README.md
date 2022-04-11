@@ -1,131 +1,65 @@
-# ml-monitoring
-*Jeremy Jordan*
+**ML model**
 
-This repository provides an example setup for monitoring an ML system deployed on Kubernetes.
+This solution uses a scikit-learn model trained on the UCI Wine Quality dataset and served via FastAPI. This is a multivariate data set and is related to red and white variants of the Portuguese “Vinho Verde” wine. Input variables are physicochemicals such as pH, chlorides, residual sugar etc. Output variable is a quality score between 0 and 10. The services are deployed on a Kubernetes cluster. Metrics are collected using Prometheus and the results are visualised in a Grafana dashboard.
 
-Blog post: https://www.jeremyjordan.me/ml-monitoring/
+How it works at a high level 
+1.	Create a containerized REST service to expose the model via a prediction endpoint.
+2.	Instrument the server to collect metrics which are exposed via a separate metrics endpoint.
+3.	Deploy Prometheus to collect and store metrics.
+4.	Deploy Grafana to visualize the collected metrics.
+5.	Finally, we’ll simulate production traffic using Locust so that we have some data to see in our dashboard.
 
-Components:
-- ML model served via `FastAPI`
-- Export server metrics via `prometheus-fastapi-instrumentator`
-- Simulate production traffic via `locust`
-- Monitor and store metrics via `Prometheus`
-- Visualize metrics via `Grafana`
+Deploying the model with FastAPI
+1.	All files contained within the model/ directory.
+2.	Train.py – simple script to produce a serialized model artifact.
+3.	App/api.py – defines a few routes for our model service including a model prediction endpoint and a health-check endpoint.
+4.	App/schemas.py – defines the expected schema for the request and response bodies in the model prediction endpoint.
+5.	Dockerfile lists the instructions to package our REST server as a container.
+6.	Server is deployed on our Kubernetes cluster using the manifest defined in Kubernetes/models/.
 
-![](.assets/dashboard.png)
+Instrumenting the service with metrics 
+1.	Goal – capture metrics and expose this data via a /metrics endpoint on our server – this is done using Prometheus-fastapi-instrumentator, which is a library that includes FastAPI middleware that collects metrics for each request and exposes the metric data to a specified endpoint.
+2.	After deploying model service on the Kubernetes cluster, port forward to a pod running the server and check out the metrics endpoints running at 127.0.0.1:3000/metrics.
 
-## Setup
+Capturing metrics with Prometheus
+1.	Once metrics are exposed at the specified endpoint, Prometheus is used to collect and store this data. 
+2.	helm is used to deploy Prometheus onto our Kubernetes cluster.
+3.	Prometheus will scrape the metric data at the endpoints at a specific interval (15 sec default).
+4.	This metric data can be queries by other services which make requests to the HTTP server
 
-1. Ensure you can connect to a Kubernetes cluster and have [`kubectl`](https://kubernetes.io/docs/tasks/tools/install-kubectl/) and [`helm`](https://helm.sh/docs/intro/install/) installed.
-    - You can easily spin up a Kubernetes cluster on your local machine using [minikube](https://minikube.sigs.k8s.io/docs/start/).
-```
-minikube start --driver=docker --memory 4g --nodes 2
-```
+Visualising results in Grafana
+1.	Grafana hosted on 127.0.0.1:8000  - pulls metric data from Prometheus and visualises it.
+2.	Queries are made to the Prometheus data source using query language called PromQL.
+3.	Pre-built dashboard is in dashboards/model.json.
 
-2. Deploy Prometheus and Grafana onto the cluster using the [community Helm chart](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack).
-```
-kubectl create namespace monitoring
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm install prometheus-stack prometheus-community/kube-prometheus-stack -n monitoring
-```
-3. Verify the resources were deployed successfully.
-```
-kubectl get all -n monitoring
-```
-4. Connect to the Grafana dashboard.
-```
-kubectl port-forward svc/prometheus-stack-grafana 8000:80 -n monitoring
-```
-- Go to http://127.0.0.1:8000/
-- Log in with the credentials:
-    - Username: admin
-    - Password: prom-operator
-    - (This password can be configured in the Helm chart `values.yaml` file)
-5. Import the model dashboard.
-    - On the left sidebar, click the "+" and select "Import".
-    - Copy and paste the JSON defined in `dashboards/model.json` in the text area.
+Simulating production traffic with Locust
+*	Use Locust, a python load testing framework, to make requests to the model service and simulate production traffic. This behaviour defined in load_tests/locustfile.py , where we define three tasks.
+    *	Request to our health check endpoint.
+    *	Choose a random example from the wine quality dataset and make a request to our prediction service.
+    *	Choose a random example from the wine quality dataset, corrupt the data, and make a bad request to our prediction service.
 
-## Deploy a model
+Setup instructions 
+1.	Install kubectl, helm, docker, and minikube.
+2.	Spin up a Kubernetes cluster on local machine using minikube 
+    *	minikube start -–driver=docker -–memory 4g –-nodes 2
+3.	Deploy Prometheus and Grafan onto the cluster using helm
+    *	kubectl create namespace monitoring
+    *	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+    *	helm install prometheus-stack prometheus-community/kube-prometheus-stack -n monitoring
+4.	Connect to the Grafana dashboard  
+    *	kubectl port-forward svc/prometheus-stack-grafana 8000:80 -n monitoring 
+5.	Visit http://127.0.0.1:8000/
+6.	Login with credentials – username: admin, password: prom-operator
+7.	Import the model dashboard – click ‘+’ sign and select “import” – import the JSON file defined in dashboards/model.json.
+8.	Deploy the model 
+    *	kubectl apply -f kubernetes/models/
+9.	Begin the load test and simulate production traffic 
+    *	kubectl apply -f kubernetes/load_tests/
 
-This repository includes an example REST service which exposes an ML model trained on the [UCI Wine Quality dataset](https://archive.ics.uci.edu/ml/datasets/wine+quality). 
+Tear down instructions 
 
-You can launch the service on Kubernetes by running:
-
-```
-kubectl apply -f kubernetes/models/
-```
-
-You can also build and run the Docker container locally.
-
-```
-docker build -t wine-quality-model -f model/Dockerfile model/
-docker run -d -p 3000:80 -e ENABLE_METRICS=true wine-quality-model
-```
-
-> **Note:** In order for Prometheus to scrape metrics from this service, we need to define a `ServiceMonitor` resource. This resource must have the label `release: prometheus-stack` in order to be discovered. This is configured in the `Prometheus` resource spec via the `serviceMonitorSelector` attribute. 
-
-You can verify the label required by running:
-```
-kubectl get prometheuses.monitoring.coreos.com prometheus-stack-kube-prom-prometheus -n monitoring -o yaml
-```
-
-## Simulate production traffic
-
-We can simulate production traffic using a Python load testing tool called [`locust`](https://locust.io/). This will make HTTP requests to our model server and provide us with data to view in the monitoring dashboard.
-
-You can begin the load test by running:
-```
-kubectl apply -f kubernetes/load_tests/
-```
-By default, production traffic will be simulated for a duration of 5 minutes. This can be changed by updating the image arguments in the `kubernetes/load_tests/locust_master.yaml` manifest.
-
-You can also modify the community [Helm chart](https://github.com/deliveryhero/helm-charts/tree/master/stable/locust/templates) instead of using the manifests defined in this repo.
-
-
-## Uploading new images
-
-This process can eventually be automated with a Github action, but remains manual for now.
-
-1. Obtain a personal access token to connect with the Github container registry.
-```
-echo "INSERT_TOKEN_HERE" >> ~/.github/cr_token
-```
-2. Authenticate with the Github container registry.
-```
-cat ~/.github/cr_token | docker login ghcr.io -u jeremyjordan --password-stdin
-```
-3. Build and tag new Docker images.
-```
-MODEL_TAG=0.3
-docker build -t wine-quality-model:$MODEL_TAG -f model/Dockerfile model/
-docker tag wine-quality-model:$MODEL_TAG ghcr.io/jeremyjordan/wine-quality-model:$MODEL_TAG
-```
-
-```
-LOAD_TAG=0.2
-docker build -t locust-load-test:$LOAD_TAG -f load_test/Dockerfile load_test/
-docker tag locust-load-test:$LOAD_TAG ghcr.io/jeremyjordan/locust-load-test:$LOAD_TAG
-```
-4. Push Docker images to container registery.
-```
-docker push ghcr.io/jeremyjordan/wine-quality-model:$MODEL_TAG
-docker push ghcr.io/jeremyjordan/locust-load-test:$LOAD_TAG
-```
-5. Update Kubernetes manifests to use the new image tag.
-
-## Teardown instructions
-
-To stop the model REST server, run:
-```
-kubectl delete -f kubernetes/models/
-```
-
-To stop the load tests, run:
-```
-kubectl delete -f kubernetes/load_tests/
-```
-
-To remove the Prometheus stack, run:
-```
-helm uninstall prometheus-stack -n monitoring
-```
+1.	Stop the model REST server 
+    *	kubectl delete -f kubernetes/models/
+    *	kubectl delete -f kubernetes/load_tests/
+2.	Remove the Prometheus stack 
+    *	helm uninstall prometheus-stack -n monitoring 
